@@ -1,0 +1,185 @@
+---
+title: "Introduction to R timeseries"
+author: "Quan Nguyen"
+date: "May 7, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We will use the Canadian car sales data to study a time series.
+
+The data has been extracted from:
+
+http://www.goodcarbadcar.net/2012/10/canada-overall-auto-industry-sales-figures.html
+
+It contains monthly sales data of number of cars sold in Canada since January 2010.
+
+## Prepare the data
+
+```{r}
+carsales = read.csv("canadian_carsales.csv", header=T, stringsAsFactors = F)
+str(carsales)
+# convert Sales column to numeric
+carsales$Sales = as.numeric(gsub(",", "", carsales$Sales))
+# the x-axis does not show the year/month
+plot(carsales$Sales, type='l')
+```
+
+## Convert data frame into a timeseries using ts() function
+
+```{r}
+carsales.ts = ts(carsales$Sales, frequency=12, start=c(2010,1))
+str(carsales.ts) 
+# the x-axis should now show the year/month
+plot(carsales.ts)
+```
+
+## Time series decomposition using stl() function
+
+```{r}
+carsales.stl = stl(carsales.ts, s.window = 4)
+plot(carsales.stl)
+```
+
+## Arima forecast of the ts timeseries
+
+```{r}
+library(forecast)
+carsales.forecast = forecast.Arima(auto.arima(carsales.ts))
+
+# Compare actual, auto.arima and forecast
+plot.forecast(carsales.forecast, col="blue", xlab="Year", sub="Canadian Car Sales")
+lines(carsales.forecast$fitted, col="red", lty=2)
+lines(carsales.ts, col="black")
+legend(
+  'topleft', inset=.02, 
+  legend=c("Forecasted", "auto.Arima-Fitted", "Original"),
+  col=c("blue", "red", "black"),
+  lty=1, box.lty=0, cex=0.8
+)
+# another way to plot the forevast using ggplot2's autoplot()
+library(ggplot2)
+autoplot(carsales.forecast) 
+```
+
+## Create some chaos, delete sample # 32 and 55
+
+```{r}
+carsales_partial = carsales[-c(32, 55),]
+# We won't be able to tell the missing samples from a non-timeseries plot
+plot(carsales_partial$Sales, type='h')
+```
+
+## Create a timeseries using zoo() as ts() cannot be used to create a timeseries with missing samples
+
+```{r}
+library(zoo)
+# create a date column to be used as time index
+carsales_partial$date = as.Date(
+  paste0(carsales_partial$Year,'-', trimws(carsales_partial$Month), '-01'),
+  format="%Y-%B-%d"
+)
+carsales_partial.z = zoo(
+  carsales_partial$Sales, 
+  order.by=carsales_partial$date,
+  frequency=12
+)
+str(carsales_partial.z)
+# view the index portion
+head(index(carsales_partial.z))
+# view the data value portion
+head(coredata(carsales_partial.z))
+plot(carsales_partial.z, type="h")
+# get date range from the timeseries
+sub_text = range(index(carsales_partial.z))
+```
+
+``` {r fig.height=12, fig.width=12}
+# compare with good timeseries
+par(mfrow=c(2,1))
+plot(carsales.ts, col="red", type='h')
+plot(carsales_partial.z, col="blue", type='h')
+par(mfrow=c(1,1))
+```
+
+## Fix the missing samples by imputing
+
+Replace the missing values with the na.locf() function (last observation carried forward)
+
+**Fixing is required for time series decomposition and Arima forecast.**
+
+```{r}
+# generate a sequence of monthly intervals
+g = seq(start(carsales_partial.z), end(carsales_partial.z), by="month")
+carsales_fixed.z = na.locf(carsales_partial.z, xout=g)
+```
+
+``` {r fig.height=12, fig.width=12}
+# compare the missing sample series with the fixed series
+par(mfrow=c(2,1))
+plot(carsales_partial.z, col="blue", type='h')
+plot(carsales_fixed.z, col="green", type='h')
+par(mfrow=c(1,1))
+carsales_fixed.z
+```
+
+## Timeseries decomposition with decompose() of the fixed zoo object
+
+We will try additive and then multiplicative decompose
+
+```{r}
+carsales_fixed.decompose = decompose(
+  ts(
+    carsales_fixed.z, 
+    frequency = 12,
+    start=c(2010,1) # we cheat by hard coding the value here
+  ),
+  "additive"
+)
+#
+plot(carsales_fixed.decompose, xlab="Year")
+title(sub=paste(sub_text,collapse="  to  "))
+
+carsales_fixed.decompose = decompose(
+  ts(
+    carsales_fixed.z, 
+    frequency = 12,
+    start=c(2010,1) # we cheat by hard coding the value here
+  ),
+  "multiplicative"
+)
+#
+plot(carsales_fixed.decompose, xlab="Year")
+title(sub=paste(sub_text,collapse="  to  "))
+```
+
+## Arima forecast
+
+```{r}
+carsales_fixed.z.forecast = forecast.Arima(
+  auto.arima(  
+    ts(
+      carsales_fixed.z, 
+      frequency = 12,
+      start=c(2010,1) # we cheat by hard coding the value here
+    )
+  )
+)
+# Compare actual, auto.arima and forecast
+plot.forecast(carsales_fixed.z.forecast, col="blue")
+lines(carsales_fixed.z.forecast$fitted, col="red", lty=2)
+lines(carsales.ts, col="black")
+legend(
+  'topleft', inset=.02, 
+  legend=c("Forecasted", "auto.Arima-Fitted", "Original"),
+  col=c("blue", "red", "black"),
+  lty=1, box.lty=0, cex=0.8
+)
+# Another way to plot arima forecast with autoplot()
+library(ggplot2)
+autoplot(carsales_fixed.z.forecast) 
+```
+
