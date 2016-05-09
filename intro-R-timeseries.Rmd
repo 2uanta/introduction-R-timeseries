@@ -2,7 +2,7 @@
 title: "Introduction to R timeseries"
 author: "Quan Nguyen"
 date: "May 7, 2016"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -182,4 +182,45 @@ legend(
 library(ggplot2)
 autoplot(carsales_fixed.z.forecast) 
 ```
+
+## Anomaly dection (None detected)
+
+```{r}
+library(AnomalyDetection)
+
+myts = as.data.frame(
+  cbind(
+    as.POSIXct(index(carsales_fixed.z)),
+    coredata(carsales_fixed.z)
+  )
+)
+colnames(myts) = c("month", "Sales")
+attr(myts$month, "tzone") = "UTC"
+
+ggplot(myts, 
+       aes(x=month, y=Sales)
+) + 
+  geom_line()
+data_anomaly = AnomalyDetectionTs(myts, max_anoms=0.01, direction="pos", plot=F, e_value = T, na.rm = T)
+# No anomaly detected as NULL result returned
+data_anomaly
+data_anomaly$plot
+```
+
+## Conditions for timeseries
+
+http://www.statosphere.com.au/check-time-series-stationary-r/
+
+```{r}
+# Compute the Box–Pierce or Ljung–Box test statistic for examining the null hypothesis of independence in a given time series. These are sometimes known as ‘portmanteau’ tests. Small p-values (i.e., less than 0.05) suggest that the series is stationary.
+Box.test(carsales.ts)
+Box.test(carsales.ts, type = "Ljung-Box")
+# The Augmented Dickey–Fuller (ADF) t-statistic test: small p-values suggest the data is stationary and doesn’t need to be differenced stationarity.
+library(tseries)
+adf.test(carsales.ts)
+# The Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test; here accepting the null hypothesis means that the series is stationarity, and small p-values suggest that the series is not stationary and a differencing is required.
+kpss.test(carsales.ts)
+
+```
+
 
